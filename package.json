@@ -1,0 +1,13 @@
+{
+  "name": "cc-log-view",
+  "version": "1.0.0",
+  "description": "Claude Code のチャットログを集約・整形して ChatLog.html を生成するツール",
+  "bin": {
+    "cc-log-view": "cclogview.js"
+  },
+  "scripts": {
+    "start": "node cclogview.js"
+  },
+  "type": "commonjs",
+  "license": "MIT"
+}
