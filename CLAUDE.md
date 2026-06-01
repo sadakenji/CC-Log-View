@@ -18,26 +18,48 @@ Claude Code のチャットログを集約・整形し、1つの読みやすい 
 ## コマンド
 
 ```sh
-node cclogview.js              # ChatLog.html を生成／差分追記（既定）
-node cclogview.js --format md  # ChatLog.md を生成／差分追記（--md でも可）
-node cclogview.js --rebuild    # 既存出力を無視して全件を作り直す（動作確認用）
-npm start                      # node cclogview.js と同じ
+node cclogview.js                # ChatLog.html を生成／差分追記（既定）
+node cclogview.js --format md    # ChatLog.md を生成／差分追記（--md でも可）
+node cclogview.js --format both  # HTML と Markdown を両方（--both でも可）
+node cclogview.js --rebuild      # 既存出力を無視して全件を作り直す（動作確認用）
+node cclogview.js --log-dir <p>  # ログ(jsonl)フォルダを直接指定
+npm start                        # node cclogview.js と同じ
 ```
 
-`--format html|md`（既定 html、`--md` は md の短縮）。`--rebuild` のエイリアス: `-r` /
+`--format html|md|both`（既定 html、`--md`/`--both` は短縮）。`--rebuild` のエイリアス: `-r` /
 `--full` / `--all`。HTML と Markdown は別ファイル・別マーカーなので、それぞれ独立に差分更新
 できる。
 
+出力（`ChatLog.*`）は常にカレントの作業ディレクトリに書き出す。読み取り元の jsonl フォルダは
+自動検出するが、見つからない場合は `--log-dir "<パス>"`、またはプロジェクトの
+`.claude/settings.local.json` に次を記述して直接指定できる:
+
+```json
+{ "cclogview": { "logDir": "<jsonl のあるフォルダの絶対パス>" } }
+```
+
+`logDir` の代わりに `projectDir`（`~/.claude/projects` 直下のフォルダ名）でも可。
+
 依存パッケージは無し（Node.js 標準ライブラリのみ）。ビルド・テスト・lint の設定は未導入。
+
+### 自動リロード（生成 HTML をライブ表示）
+
+`cclogview.js` を再実行するたびに `ChatLog.html` を自動で再表示したい場合は、VS Code 拡張
+**Live Server** で開く（`ChatLog.html` を右クリック → "Open with Live Server"）。Live Server が
+ファイル変更を監視して即座にブラウザをリロードする。`file://` 直開きでは自動リロードできない
+ため、この用途では Live Server（または任意のローカルサーバ）経由で開く。HTML 側に自動リロード
+用のコードは持たせていない（サーバ側に任せる方針）。
 
 ## アーキテクチャ
 
 実装は単一ファイル [cclogview.js](cclogview.js) に集約。データの流れは
 **ログ特定 → 読込/正規化 → 描画 → 新規生成 or 差分追記**。
 
-- **ログの特定** (`encodeProjectDir` / `findLogFiles`): `process.cwd()` の `:` `\` `/` を
-  `-` に置換して Claude Code のプロジェクトフォルダ名を求め、
-  `~/.claude/projects/<encoded>/*.jsonl` 内の全セッションを対象にする。
+- **ログの特定** (`resolveLogDir` / `findLogFiles`): jsonl フォルダを次の優先順で解決する
+  — ① CLI `--log-dir` ② `.claude/settings.local.json`（無ければ `settings.json`）の
+  `cclogview.logDir` / `projectDir` ③ `process.cwd()` の `:` `\` `/` を `-` に置換した
+  自動検出（完全一致 → 大小無視フォールバック。ドライブレターの大小差を吸収）。解決した
+  フォルダ内の全セッション `*.jsonl` を対象にする。出力は常に `process.cwd()` に書く。
 - **読込と正規化** (`loadEntries` / `normalize`): 各 jsonl 行をパースし、`user`/`assistant`
   のみを `{ts, role, parts[]}` に正規化してタイムスタンプ昇順にマージ。`isMeta`（コマンド
   展開などの注入メッセージ）は除外。`parts` の種別は command / text / thinking / tool_use /
