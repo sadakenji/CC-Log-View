@@ -6,7 +6,8 @@
     "cc-log-view": "cclogview.js"
   },
   "scripts": {
-    "start": "node cclogview.js"
+    "start": "node cclogview.js",
+    "deploy": "node -e \"const fs=require('fs'),os=require('os'),p=require('path');const d=p.join(os.homedir(),'.claude','scripts');fs.mkdirSync(d,{recursive:true});fs.copyFileSync('cclogview.js',p.join(d,'cclogview.js'));console.log('deployed: '+p.join(d,'cclogview.js'))\""
   },
   "type": "commonjs",
   "license": "MIT"

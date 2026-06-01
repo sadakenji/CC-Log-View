@@ -24,7 +24,16 @@ node cclogview.js --format both  # HTML と Markdown を両方（--both でも�
 node cclogview.js --rebuild      # 既存出力を無視して全件を作り直す（動作確認用）
 node cclogview.js --log-dir <p>  # ログ(jsonl)フォルダを直接指定
 npm start                        # node cclogview.js と同じ
+npm run deploy                   # 完成版を ~/.claude/scripts/ へ配置（下記参照）
 ```
+
+### 配置（デプロイ）
+
+開発・テストは本プロジェクトで行い、完成したものを `npm run deploy` で
+`~/.claude/scripts/cclogview.js` へコピーする。ユーザスコープの Stop hook はこの配置先を
+参照しているため、全プロジェクトで使えるようになる（hook コマンド: `node
+"$env:USERPROFILE\.claude\scripts\cclogview.js" --format both`）。**本プロジェクトの編集は
+deploy するまで他プロジェクトに反映されない**点に注意。
 
 `--format html|md|both`（既定 html、`--md`/`--both` は短縮）。`--rebuild` のエイリアス: `-r` /
 `--full` / `--all`。HTML と Markdown は別ファイル・別マーカーなので、それぞれ独立に差分更新
