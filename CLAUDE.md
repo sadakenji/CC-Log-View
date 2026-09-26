@@ -9,8 +9,9 @@ Claude Code のチャットログを集約・整形し、1つの読みやすい 
 
 要件:
 
-- **プロジェクトルートで実行** — Claude Code プロジェクトのルートで実行し、そこに
-  `ChatLog.html` を出力する。
+- **プロジェクトルートで実行** — Claude Code プロジェクトのルートで実行し、
+  `~/.claude-logs/<プロジェクト名>/` に `ChatLog.html` を出力する（`<プロジェクト名>` は
+  フルパスのエンコードではなく、実行ディレクトリの名前のみ）。git の管理対象外。
 - **読みやすさの再現** — HTML 出力で、元の Claude Code チャット表示の読みやすさを再現する。
 - **差分更新** — 出力ファイル末尾に最後のチャット行のタイムスタンプを記録し、再実行時は
   全体を再生成せず、それより新しいエントリのみを追記する。
@@ -39,7 +40,11 @@ deploy するまで他プロジェクトに反映されない**点に注意。
 `--full` / `--all`。HTML と Markdown は別ファイル・別マーカーなので、それぞれ独立に差分更新
 できる。
 
-出力（`ChatLog.*`）は常にカレントの作業ディレクトリに書き出す。読み取り元の jsonl フォルダは
+出力（`ChatLog.*`）は常に `~/.claude-logs/<プロジェクト名>/` に書き出す（フォルダは自動作成）。
+リポジトリ外なので git の管理対象にはならない。旧仕様の出力（プロジェクト直下の
+`ChatLog.*`）が残っている場合は実行時に新しい出力先へ自動移動し（`migrateLegacyOutput`）、
+以降はそこへ差分追記する。移動先に同名ファイルが既にあるときは移動せず警告のみ。
+読み取り元の jsonl フォルダは
 自動検出するが、見つからない場合は `--log-dir "<パス>"`、またはプロジェクトの
 `.claude/settings.local.json` に次を記述して直接指定できる:
 
@@ -53,8 +58,9 @@ deploy するまで他プロジェクトに反映されない**点に注意。
 
 ### 自動リロード（生成 HTML をライブ表示）
 
-`cclogview.js` を再実行するたびに `ChatLog.html` を自動で再表示したい場合は、VS Code 拡張
-**Live Server** で開く（`ChatLog.html` を右クリック → "Open with Live Server"）。Live Server が
+`cclogview.js` を再実行するたびに `ChatLog.html` を自動で再表示したい場合は、出力先の
+`~/.claude-logs/<プロジェクト名>/ChatLog.html` を VS Code 拡張 **Live Server** などで開く
+（フォルダを VS Code で開き、`ChatLog.html` を右クリック → "Open with Live Server"）。Live Server が
 ファイル変更を監視して即座にブラウザをリロードする。`file://` 直開きでは自動リロードできない
 ため、この用途では Live Server（または任意のローカルサーバ）経由で開く。HTML 側に自動リロード
 用のコードは持たせていない（サーバ側に任せる方針）。
@@ -68,7 +74,8 @@ deploy するまで他プロジェクトに反映されない**点に注意。
   — ① CLI `--log-dir` ② `.claude/settings.local.json`（無ければ `settings.json`）の
   `cclogview.logDir` / `projectDir` ③ `process.cwd()` の `:` `\` `/` を `-` に置換した
   自動検出（完全一致 → 大小無視フォールバック。ドライブレターの大小差を吸収）。解決した
-  フォルダ内の全セッション `*.jsonl` を対象にする。出力は常に `process.cwd()` に書く。
+  フォルダ内の全セッション `*.jsonl` を対象にする。出力先は `resolveOutputDir` が解決する
+  `~/.claude-logs/<basename(process.cwd())>/`（無ければ作成）。
 - **読込と正規化** (`loadEntries` / `normalize`): 各 jsonl 行をパースし、`user`/`assistant`
   のみを `{ts, role, parts[]}` に正規化してタイムスタンプ昇順にマージ。`isMeta`（コマンド
   展開などの注入メッセージ）は除外。`parts` の種別は command / text / thinking / tool_use /

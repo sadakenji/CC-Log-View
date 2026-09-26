@@ -5,7 +5,8 @@
  * CC-Log-View
  *
  * Claude Code のチャットログ（~/.claude/projects/<encoded>/ *.jsonl）を集約・整形し、
- * 実行したプロジェクトルートに ChatLog.html / ChatLog.md として出力する。
+ * ~/.claude-logs/<プロジェクト名>/ に ChatLog.html / ChatLog.md として出力する。
+ * （<プロジェクト名> はフルパスのエンコードではなく、実行ディレクトリの名前のみ）
  *
  * - 複数セッション(*.jsonl)をタイムスタンプ順にマージ
  * - 元のチャット表示の読みやすさを再現（思考/ツール入出力は折りたたみ）
@@ -44,6 +45,14 @@ function encodeProjectDir(cwd) {
 }
 
 const PROJECTS_BASE = path.join(os.homedir(), ".claude", "projects");
+const OUTPUT_BASE = path.join(os.homedir(), ".claude-logs");
+
+/** 出力先フォルダ（~/.claude-logs/<プロジェクト名>/）を解決し、無ければ作成する。 */
+function resolveOutputDir() {
+  const dir = path.join(OUTPUT_BASE, path.basename(process.cwd()));
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
 
 /** プロジェクトの設定ファイルから cclogview 用の設定を読む（無ければ null）。 */
 function readProjectConfig() {
@@ -671,10 +680,37 @@ const RENDERERS = {
   },
 };
 
+/**
+ * 旧仕様の出力（プロジェクト直下の ChatLog.*）が残っていれば新しい出力先へ移動する。
+ * 移動後はそのファイル末尾のマーカーを基準に差分追記が継続される。
+ */
+function migrateLegacyOutput(outDir) {
+  for (const { file } of Object.values(RENDERERS)) {
+    const src = path.join(process.cwd(), file);
+    if (!fs.existsSync(src)) continue;
+    const dest = path.join(outDir, file);
+    if (fs.existsSync(dest)) {
+      console.warn(
+        `[移行] ${dest} が既に存在するため、旧ファイル ${src} は移動しませんでした。` +
+          `不要であれば手動で削除してください。`
+      );
+      continue;
+    }
+    try {
+      fs.renameSync(src, dest);
+    } catch {
+      // 別ドライブ間など rename できない場合はコピー＋削除
+      fs.copyFileSync(src, dest);
+      fs.unlinkSync(src);
+    }
+    console.log(`[移行] 旧出力を移動しました: ${src} → ${dest}`);
+  }
+}
+
 /** 1 形式分の出力を生成／差分追記する。entries は読込済みの全エントリ。 */
-function generate(format, rebuild, entries) {
+function generate(format, rebuild, entries, outDir) {
   const r = RENDERERS[format];
-  const outputFile = path.join(process.cwd(), r.file);
+  const outputFile = path.join(outDir, r.file);
 
   // 既存出力から前回の最終タイムスタンプを取得（差分更新の基準）
   let prevTs = "";
@@ -725,8 +761,10 @@ function main() {
     return;
   }
 
+  const outDir = resolveOutputDir();
+  migrateLegacyOutput(outDir);
   const formats = format === "both" ? ["html", "md"] : [format];
-  for (const f of formats) generate(f, rebuild, entries);
+  for (const f of formats) generate(f, rebuild, entries, outDir);
 }
 
 try {
