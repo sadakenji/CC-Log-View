@@ -1,5 +1,6 @@
 @echo off
-for /f "delims=" %%i in ('node %HOME%\.claude\scripts\cclogview.js --print-dir') do (
+REM Open the project's ChatLog.html in Chrome
+for /f "delims=" %%i in ('node "%USERPROFILE%\.claude\scripts\cclogview.js" --print-dir') do (
 	set LOGDIR=%%i
 )
-ch --window-name="CCLOG" %LOGDIR%\ChatLog.html
+call ch --window-name="CCLOG" "%LOGDIR%\ChatLog.html"

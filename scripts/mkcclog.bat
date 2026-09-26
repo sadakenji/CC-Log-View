@@ -1,3 +1,3 @@
 @echo off
-REM ƒƒO‚Ìì¬‚ğè“®Às‚·‚é
-node %HOME%\.claude\scripts\cclogview.js --format both
+REM Generate the chat log manually (HTML and Markdown)
+node "%USERPROFILE%\.claude\scripts\cclogview.js" --format both
