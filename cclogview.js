@@ -20,6 +20,10 @@
  *   node cclogview.js --format both   HTML と Markdown を両方
  *   node cclogview.js --rebuild       既存出力を無視して全件を作り直す
  *   node cclogview.js --log-dir <p>   ログ(jsonl)フォルダを直接指定
+ *   node cclogview.js --print-dir     出力先フォルダのパスを表示して終了
+ *
+ * プロジェクトのサブフォルダで実行しても、親へさかのぼってプロジェクトルートを
+ * 探し、そこを基準に動作する（見つからなければエラー終了）。
  *
  * ログフォルダの自動検出に失敗する場合は、--log-dir で直接指定するか、
  * プロジェクトの .claude/settings.local.json に次を記述する:
@@ -47,9 +51,14 @@ function encodeProjectDir(cwd) {
 const PROJECTS_BASE = path.join(os.homedir(), ".claude", "projects");
 const OUTPUT_BASE = path.join(os.homedir(), ".claude-logs");
 
-/** 出力先フォルダ（~/.claude-logs/<プロジェクト名>/）を解決し、無ければ作成する。 */
+/** 出力先フォルダ（~/.claude-logs/<プロジェクト名>/）のパスを返す（作成はしない）。 */
+function getOutputDir() {
+  return path.join(OUTPUT_BASE, path.basename(process.cwd()));
+}
+
+/** 出力先フォルダを解決し、無ければ作成する。 */
 function resolveOutputDir() {
-  const dir = path.join(OUTPUT_BASE, path.basename(process.cwd()));
+  const dir = getOutputDir();
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -77,6 +86,41 @@ function findDirCaseInsensitive(base, name) {
   return hit ? path.join(base, hit) : null;
 }
 
+/** dir に対応する ~/.claude/projects 配下のログフォルダを探す（無ければ null）。 */
+function findProjectLogDir(dir) {
+  const encoded = encodeProjectDir(dir);
+  const exact = path.join(PROJECTS_BASE, encoded);
+  if (fs.existsSync(exact)) return exact;
+  return findDirCaseInsensitive(PROJECTS_BASE, encoded);
+}
+
+/**
+ * start から親へさかのぼってプロジェクトルートを探す（無ければ null）。
+ * 判定は次の順に、それぞれ近い階層を優先する:
+ *   ① ~/.claude/projects に対応するログフォルダがある
+ *   ② .claude/ がある（ホームの ~/.claude はユーザ設定なので除外）
+ *   ③ .git がある
+ */
+function findProjectRoot(start) {
+  const dirs = [];
+  for (let d = path.resolve(start); ; d = path.dirname(d)) {
+    dirs.push(d);
+    if (path.dirname(d) === d) break;
+  }
+  const home = path.resolve(os.homedir()).toLowerCase();
+  const tests = [
+    (d) => findProjectLogDir(d) !== null,
+    (d) =>
+      d.toLowerCase() !== home && fs.existsSync(path.join(d, ".claude")),
+    (d) => fs.existsSync(path.join(d, ".git")),
+  ];
+  for (const test of tests) {
+    const hit = dirs.find(test);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 /**
  * ログ（jsonl）のあるフォルダを解決する。
  * 優先: CLI --log-dir > settings.local.json の cclogview.logDir / projectDir
@@ -93,14 +137,11 @@ function resolveLogDir(cliLogDir) {
     if (cfg.projectDir) return path.join(PROJECTS_BASE, cfg.projectDir);
   }
 
-  // 3) cwd から自動検出
-  const encoded = encodeProjectDir(process.cwd());
-  const exact = path.join(PROJECTS_BASE, encoded);
-  if (fs.existsSync(exact)) return exact;
-  const ci = findDirCaseInsensitive(PROJECTS_BASE, encoded);
-  if (ci) return ci;
-
-  return exact; // 見つからない（呼び出し側でエラー表示）
+  // 3) cwd から自動検出（見つからなければ呼び出し側でエラー表示）
+  return (
+    findProjectLogDir(process.cwd()) ||
+    path.join(PROJECTS_BASE, encodeProjectDir(process.cwd()))
+  );
 }
 
 function findLogFiles(cliLogDir) {
@@ -661,7 +702,9 @@ function parseArgs(argv) {
   let logDir = null;
   const di = args.indexOf("--log-dir");
   if (di !== -1 && args[di + 1]) logDir = args[di + 1];
-  return { rebuild, format, logDir };
+  // --print-dir: 出力先フォルダのパスを表示するだけで終了
+  const printDir = args.includes("--print-dir");
+  return { rebuild, format, logDir, printDir };
 }
 
 /** 出力形式ごとの差分。 */
@@ -748,7 +791,26 @@ function generate(format, rebuild, entries, outDir) {
 }
 
 function main() {
-  const { rebuild, format, logDir } = parseArgs(process.argv);
+  const args = parseArgs(process.argv);
+  const { rebuild, format, printDir } = args;
+  // --log-dir の相対パスは実行ディレクトリ基準で解決してから移動する
+  const logDir = args.logDir && path.resolve(args.logDir);
+
+  // サブフォルダで実行された場合もプロジェクトルートを基準に動作させる
+  const root = findProjectRoot(process.cwd());
+  if (!root) {
+    throw new Error(
+      `プロジェクトルートが見つかりません（起点: ${process.cwd()}）。\n` +
+        `Claude Code のログ・.claude/・.git のいずれかがあるフォルダ、` +
+        `またはその配下で実行してください。`
+    );
+  }
+  process.chdir(root);
+
+  if (printDir) {
+    console.log(getOutputDir());
+    return;
+  }
 
   const files = findLogFiles(logDir);
   if (!files.length) {

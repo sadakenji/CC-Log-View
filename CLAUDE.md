@@ -24,6 +24,7 @@ node cclogview.js --format md    # ChatLog.md を生成／差分追記（--md �
 node cclogview.js --format both  # HTML と Markdown を両方（--both でも可）
 node cclogview.js --rebuild      # 既存出力を無視して全件を作り直す（動作確認用）
 node cclogview.js --log-dir <p>  # ログ(jsonl)フォルダを直接指定
+node cclogview.js --print-dir    # 出力先フォルダのパスだけを表示して終了（フォルダは作らない）
 npm start                        # node cclogview.js と同じ
 npm run deploy                   # 完成版を ~/.claude/scripts/ へ配置（下記参照）
 ```
@@ -44,6 +45,9 @@ deploy するまで他プロジェクトに反映されない**点に注意。
 リポジトリ外なので git の管理対象にはならない。旧仕様の出力（プロジェクト直下の
 `ChatLog.*`）が残っている場合は実行時に新しい出力先へ自動移動し（`migrateLegacyOutput`）、
 以降はそこへ差分追記する。移動先に同名ファイルが既にあるときは移動せず警告のみ。
+出力先のパスは `--print-dir` で取得できる（他プロジェクトでは
+`node "$env:USERPROFILE\.claude\scripts\cclogview.js" --print-dir`。例: `ii (…)` で
+エクスプローラを開く）。
 読み取り元の jsonl フォルダは
 自動検出するが、見つからない場合は `--log-dir "<パス>"`、またはプロジェクトの
 `.claude/settings.local.json` に次を記述して直接指定できる:
@@ -68,14 +72,20 @@ deploy するまで他プロジェクトに反映されない**点に注意。
 ## アーキテクチャ
 
 実装は単一ファイル [cclogview.js](cclogview.js) に集約。データの流れは
-**ログ特定 → 読込/正規化 → 描画 → 新規生成 or 差分追記**。
+**ルート特定 → ログ特定 → 読込/正規化 → 描画 → 新規生成 or 差分追記**。
+
+- **ルートの特定** (`findProjectRoot`): 実行ディレクトリから親へさかのぼり、① 対応する
+  `~/.claude/projects` のログフォルダ ② `.claude/`（ホームの `~/.claude` は除外）③ `.git`
+  の順に、それぞれ最も近い階層をプロジェクトルートとして `process.chdir` する。以降の
+  `process.cwd()` はすべてルートを指すため、サブフォルダからの実行でも同じ結果になる。
+  見つからなければエラー終了。`--log-dir` の相対パスは移動前に解決する。
 
 - **ログの特定** (`resolveLogDir` / `findLogFiles`): jsonl フォルダを次の優先順で解決する
   — ① CLI `--log-dir` ② `.claude/settings.local.json`（無ければ `settings.json`）の
   `cclogview.logDir` / `projectDir` ③ `process.cwd()` の `:` `\` `/` を `-` に置換した
   自動検出（完全一致 → 大小無視フォールバック。ドライブレターの大小差を吸収）。解決した
-  フォルダ内の全セッション `*.jsonl` を対象にする。出力先は `resolveOutputDir` が解決する
-  `~/.claude-logs/<basename(process.cwd())>/`（無ければ作成）。
+  フォルダ内の全セッション `*.jsonl` を対象にする。出力先は `getOutputDir` が返す
+  `~/.claude-logs/<basename(process.cwd())>/`（`resolveOutputDir` が無ければ作成）。
 - **読込と正規化** (`loadEntries` / `normalize`): 各 jsonl 行をパースし、`user`/`assistant`
   のみを `{ts, role, parts[]}` に正規化してタイムスタンプ昇順にマージ。`isMeta`（コマンド
   展開などの注入メッセージ）は除外。`parts` の種別は command / text / thinking / tool_use /
